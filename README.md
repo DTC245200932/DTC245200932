@@ -1,31 +1,62 @@
-# Đồ án: Website Quảng bá Sản phẩm (WordPress) - (Đề 3)
+# Cấu trúc hệ thống (Đề 3: Website Quảng bá Sản phẩm - WordPress)
 
-* **Họ tên:** Nguyễn Ngọc Anh
-* **MSSV:** DTC245200932
-* **Lớp:** CNTT K23D
+Hệ thống gồm các thành phần:
+* WordPress (Website giới thiệu sản phẩm)
+* MySQL Database
+* phpMyAdmin
+* Nginx
+* Prometheus
+* Grafana
+* Loki
+* Promtail
 
-## Giới thiệu Đề tài
-Hệ thống triển khai bằng Docker Compose gồm WordPress, MySQL, Nginx, Prometheus, Grafana, Loki và Promtail.
+## Cách chạy
 
-## Công nghệ sử dụng
-* **WordPress & PHP:** Mã nguồn ứng dụng web chính.
-* **MySQL 8:** Cơ sở dữ liệu lưu trữ dữ liệu website.
-* **Nginx:** Reverse proxy và cấu hình bảo mật.
-* **Prometheus & Grafana:** Giám sát hiệu năng hệ thống.
-* **Loki & Promtail:** Thu thập và quản lý log tập trung.
-* **Docker & Docker Compose:** Đóng gói và quản lý container.
+1. Sao chép file cấu hình: `cp .env.example .env` (sau đó sửa mật khẩu tùy ý).
+2. Chạy: `docker compose up -d --build`
+3. Truy cập:
+   * Giao diện WordPress: `http://192.168.119.128:80`
+   * phpMyAdmin: `http://192.168.119.128:8081`
 
-## Cấu trúc Hệ thống
-Hệ thống gồm các thành phần chính:
-* wordpress: Chứa mã nguồn ứng dụng WordPress.
-* db: Dữ liệu cơ sở dữ liệu MySQL.
-* nginx: Cổng giao tiếp và điều hướng mạng.
-* monitoring: Prometheus và Grafana.
-* logging: Loki và Promtail.
+---
 
-## Cách Chạy Ứng dụng
-1. Sao chép file cấu hình môi trường bằng lệnh: cp .env.example .env (sau đó chỉnh sửa lại mật khẩu trong file .env nếu cần).
-2. Khởi động toàn bộ các container bằng lệnh: docker compose up -d --build
-3. Truy cập trang web trên trình duyệt:
-- Website WordPress: http://localhost
-- Grafana (Giám sát): http://localhost:3000
+## Nginx
+
+* Reverse proxy tới app WordPress, HTTPS chứng chỉ tự ký (TLS 1.2/1.3)
+* Security headers: HSTS, X-Frame-Options, X-Content-Type-Options, CSP, Referrer-Policy, Permissions-Policy
+* Ẩn phiên bản Nginx (`server_tokens off`), đóng cổng truy cập trực tiếp của app WordPress.
+
+---
+
+## Giám sát (Prometheus + Grafana)
+
+* Prometheus thu số liệu từ: cAdvisor (container), nginx-prometheus-exporter (web server), mysqld-exporter (database).
+* Grafana: `http://192.168.119.128:3000` (tài khoản: `admin`, mật khẩu là `GRAFANA_ADMIN_PASSWORD` trong `.env`).
+* Prometheus: `http://192.168.119.128:9090`
+* Phần giám sát nằm trong file `docker-compose.monitoring.yml`, được ghép từ dòng biến `COMPOSE_FILE` trong `.env`.
+* Mạng: Prometheus, Grafana, cAdvisor ở mạng `default`; hai exporter nối thêm vào `backend-network` để đo đạc dữ liệu từ Nginx, WordPress và MySQL, nên Prometheus/Grafana không truy cập trực tiếp độc lập ngoài mạng nội bộ.
+* Giới hạn bộ nhớ từng container, lưu dữ liệu Prometheus tối đa 3 ngày.
+
+---
+
+## Log tập trung (Loki + Promtail)
+
+* Promtail đọc log các container (qua `docker.sock`), đẩy sang Loki; Grafana xem log qua data source Loki.
+* Phần log nằm trong file `docker-compose.logging.yml`, được ghép nhỏ bởi biến `COMPOSE_FILE` trong `.env`.
+* Loki không mở cổng ra ngoài; log giữ 72 giờ.
+* Truy vấn LogQL mẫu (Grafana > Explore > chọn Loki):
+  * `{container="wp_app"}`: log truy cập ứng dụng WordPress.
+  * `{container="wp_app"} |= "45|[0-9][0-9]"`: các request lỗi 4xx/5xx.
+  * `sum by (container) (rate({container=~"wp-.*"}[1m]))`: tốc độ sinh log theo dịch vụ.
+
+---
+
+## Hardening
+
+* **Container non-root:** WordPress chạy UID 1000, bỏ toàn bộ capability (`cap_drop: ALL`), hệ thống file chỉ đọc (`read_only`), cấm leo thang đặc quyền (`no-new-privileges`)[cite: 13].
+* **Cách ly mạng:** `frontend` (nginx, wordpress, phpmyadmin) và `backend` (wordpress, mysql, phpmyadmin) là mạng `internal`; MySQL không có đường ra Internet, Nginx không nói chuyện trực tiếp tới MySQL[cite: 13].
+* **Mật khẩu mạnh:** Sinh ngẫu nhiên bằng `openssl rand`, tối thiểu 20 ký tự, lưu trong `.env` (không đưa lên GitHub), đổi mật khẩu ứng dụng bằng `security/rotate-app-password.sh`[cite: 13].
+* **Hạn chế quyền database:** User ứng dụng chỉ `SELECT, INSERT, UPDATE, DELETE` trên database của ứng dụng, khoá root đang nhập từ xa (`security/harden-db.sh`); user exporter chỉ đọc thống kê[cite: 13].
+* **Security headers Nginx:** HSTS, X-Frame-Options, X-Content-Type-Options, CSP, Referrer-Policy, Permissions-Policy; ẩn phiên bản Nginx và header `X-Powered-By`[cite: 13].
+* **Kiểm tra:** `bash security/audit.sh`[cite: 13]
+* Phần hardening nằm trong file `docker-compose.hardening.yml`, ghép nhỏ theo biến `COMPOSE_FILE`[cite: 13].
