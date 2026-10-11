@@ -54,6 +54,8 @@ services:
     image: phpmyadmin/phpmyadmin
     container_name: phpmyadmin
     restart: always
+    ports:
+      - "8081:80"
     environment:
       PMA_HOST: db
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
@@ -85,12 +87,24 @@ services:
     networks:
       - app-net
 
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node_exporter
+    restart: always
+    ports:
+      - "9100:9100"
+    networks:
+      - app-net
+
   grafana:
     image: grafana/grafana:latest
     container_name: grafana
     restart: always
     ports:
       - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin123456@
     volumes:
       - grafana_data:/var/lib/grafana
     networks:
