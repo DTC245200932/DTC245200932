@@ -16,7 +16,7 @@ docker compose ps
 
 | Thành phần | Địa chỉ | Ghi chú |
 |---|---|---|
-| WordPress / Nginx | `http://<địa-chỉ-máy-chạy-Docker>/` | Website chỉ được công bố qua reverse proxy; máy hiện tại dùng `192.168.119.128` |
+| WordPress / Nginx | `http://192.168.119.128/` | Website chỉ được công bố qua reverse proxy; máy hiện tại dùng `192.168.119.128` |
 | phpMyAdmin | `http://localhost:8081/` | Đăng nhập bằng tài khoản MySQL trong `.env` |
 | Prometheus | `http://localhost:9090/` | Xem trạng thái scrape ở `/targets` |
 | Grafana | `http://localhost:3000/` | Tên đăng nhập `admin`, mật khẩu `GRAFANA_ADMIN_PASSWORD` |
