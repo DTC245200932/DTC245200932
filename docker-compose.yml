@@ -1,8 +1,12 @@
-version: '3.8'
-
 networks:
-  app-net:
+  frontend:
     driver: bridge
+  backend:
+    driver: bridge
+    internal: true
+  monitoring:
+    driver: bridge
+    internal: true
 
 volumes:
   db_data:
@@ -16,18 +20,21 @@ services:
   db:
     image: mysql:8.0
     container_name: mysql_db
-    restart: always
+    restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_DATABASE}
-      MYSQL_USER: ${MYSQL_USER}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-wordpress}
+      MYSQL_USER: ${MYSQL_USER:-wp_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in .env}
+      MYSQL_EXPORTER_USER: ${MYSQL_EXPORTER_USER:?Set MYSQL_EXPORTER_USER in .env}
+      MYSQL_EXPORTER_PASSWORD: ${MYSQL_EXPORTER_PASSWORD:?Set MYSQL_EXPORTER_PASSWORD in .env}
     volumes:
       - db_data:/var/lib/mysql
+      - ./db/setup-exporter-user.sh:/docker-entrypoint-initdb.d/01-create-exporter-user.sh:ro
     networks:
-      - app-net
+      - backend
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p\"$${MYSQL_ROOT_PASSWORD}\" --silent"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -36,16 +43,19 @@ services:
   wordpress:
     image: wordpress:latest
     container_name: wordpress_app
-    restart: always
+    restart: unless-stopped
     environment:
       WORDPRESS_DB_HOST: db:3306
-      WORDPRESS_DB_NAME: ${MYSQL_DATABASE}
-      WORDPRESS_DB_USER: ${MYSQL_USER}
-      WORDPRESS_DB_PASSWORD: ${MYSQL_PASSWORD}
+      WORDPRESS_DB_NAME: ${MYSQL_DATABASE:-wordpress}
+      WORDPRESS_DB_USER: ${MYSQL_USER:-wp_user}
+      WORDPRESS_DB_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in .env}
     volumes:
       - wp_data:/var/www/html
+      - ./wordpress/mu-plugins:/var/www/html/wp-content/mu-plugins:ro
+      - ./wordpress/themes/chanel-showcase:/var/www/html/wp-content/themes/chanel-showcase:ro
     networks:
-      - app-net
+      - frontend
+      - backend
     depends_on:
       db:
         condition: service_healthy
@@ -53,86 +63,149 @@ services:
   phpmyadmin:
     image: phpmyadmin/phpmyadmin
     container_name: phpmyadmin
-    restart: always
+    restart: unless-stopped
     ports:
       - "8081:80"
     environment:
       PMA_HOST: db
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}
     networks:
-      - app-net
+      - frontend
+      - backend
+    depends_on:
+      db:
+        condition: service_healthy
+
+  mysql-exporter:
+    image: prom/mysqld-exporter:latest
+    container_name: mysql_exporter
+    restart: unless-stopped
+    user: ${MYSQL_EXPORTER_UID:?Set MYSQL_EXPORTER_UID in .env}:${MYSQL_EXPORTER_GID:?Set MYSQL_EXPORTER_GID in .env}
+    command:
+      - --config.my-cnf=/etc/mysql-exporter/.my.cnf
+      - --mysqld.address=db:3306
+      - --mysqld.username=${MYSQL_EXPORTER_USER:?Set MYSQL_EXPORTER_USER in .env}
+    volumes:
+      - ./mysql-exporter/.my.cnf:/etc/mysql-exporter/.my.cnf:ro
+    networks:
+      - backend
+      - monitoring
+    depends_on:
+      db:
+        condition: service_healthy
 
   nginx:
     image: nginx:latest
     container_name: nginx_proxy
-    restart: always
+    restart: unless-stopped
     ports:
       - "80:80"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
       - wordpress
-      - phpmyadmin
     networks:
-      - app-net
+      - frontend
+      - monitoring
+
+  nginx-exporter:
+    image: nginx/nginx-prometheus-exporter:latest
+    container_name: nginx_exporter
+    restart: unless-stopped
+    command:
+      - --nginx.scrape-uri=http://nginx:8080/nginx_status
+    depends_on:
+      - nginx
+    networks:
+      - monitoring
 
   prometheus:
     image: prom/prometheus:latest
     container_name: prometheus
-    restart: always
+    restart: unless-stopped
     ports:
       - "9090:9090"
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
     volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
     networks:
-      - app-net
+      - frontend
+      - monitoring
 
   node-exporter:
     image: prom/node-exporter:latest
     container_name: node_exporter
-    restart: always
-    ports:
-      - "9100:9100"
+    restart: unless-stopped
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/rootfs
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro,rslave
     networks:
-      - app-net
+      - monitoring
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: cadvisor
+    restart: unless-stopped
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+    networks:
+      - monitoring
 
   grafana:
     image: grafana/grafana:latest
     container_name: grafana
-    restart: always
+    restart: unless-stopped
     ports:
       - "3000:3000"
     environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin123456@
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in .env}
     volumes:
       - grafana_data:/var/lib/grafana
+      - ./grafana-datasources:/etc/grafana/provisioning/datasources:ro
+      - ./grafana-dashboards:/etc/grafana/provisioning/dashboards:ro
     networks:
-      - app-net
+      - frontend
+      - monitoring
+    depends_on:
+      - prometheus
+      - loki
 
   loki:
     image: grafana/loki:latest
     container_name: loki
-    restart: always
-    ports:
-      - "3100:3100"
+    restart: unless-stopped
     command: -config.file=/etc/loki/local-config.yaml
     volumes:
-      - loki_data:/tmp/loki
+      - ./loki/config.yaml:/etc/loki/local-config.yaml:ro
+      - loki_data:/loki
     networks:
-      - app-net
+      - monitoring
 
   promtail:
     image: grafana/promtail:latest
     container_name: promtail
-    restart: always
+    restart: unless-stopped
     volumes:
-      - /var/log:/var/log
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ./promtail/promtail-config.yaml:/etc/promtail/promtail-config.yaml
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./promtail/promtail-config.yaml:/etc/promtail/promtail-config.yaml:ro
+      - promtail_data:/var/lib/promtail
     command: -config.file=/etc/promtail/promtail-config.yaml
     networks:
-      - app-net
+      - monitoring
     depends_on:
       - loki

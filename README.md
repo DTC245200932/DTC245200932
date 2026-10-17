@@ -1,62 +1,105 @@
-# Cấu trúc hệ thống (Đề 3: Website Quảng bá Sản phẩm - WordPress)
+# Đề 3 — Website quảng bá túi xách Chanel
 
-Hệ thống gồm các thành phần:
-* WordPress (Website giới thiệu sản phẩm)
-* MySQL Database
-* phpMyAdmin
-* Nginx
-* Prometheus
-* Grafana
-* Loki
-* Promtail
+Website showcase WordPress chạy trên Docker Compose, có form yêu cầu tư vấn lưu vào MySQL và bộ giám sát Prometheus, Grafana, Loki.
+## Chạy dự án
 
-## Cách chạy
+Yêu cầu Docker Engine và Docker Compose v2. Từ thư mục dự án:
 
-1. Sao chép file cấu hình: `cp .env.example .env` (sau đó sửa mật khẩu tùy ý).
-2. Chạy: `docker compose up -d --build`
-3. Truy cập:
-   * Giao diện WordPress: `http://192.168.119.128:80`
-   * phpMyAdmin: `http://192.168.119.128:8081`
+```bash
+bash scripts/gen-env.sh
+docker compose config --quiet
+docker compose up -d
+docker compose ps
+```
 
----
+## Truy cập
 
-## Nginx
+| Thành phần | Địa chỉ | Ghi chú |
+|---|---|---|
+| WordPress / Nginx | `http://<địa-chỉ-máy-chạy-Docker>/` | Website chỉ được công bố qua reverse proxy; máy hiện tại dùng `192.168.119.128` |
+| phpMyAdmin | `http://localhost:8081/` | Đăng nhập bằng tài khoản MySQL trong `.env` |
+| Prometheus | `http://localhost:9090/` | Xem trạng thái scrape ở `/targets` |
+| Grafana | `http://localhost:3000/` | Tên đăng nhập `admin`, mật khẩu `GRAFANA_ADMIN_PASSWORD` |
+| Dashboard | `http://localhost:3000/d/chanel-showcase-system/chanel-showcase-system` | Dashboard dựng sẵn về web, container, DB và log |
 
-* Reverse proxy tới app WordPress, HTTPS chứng chỉ tự ký (TLS 1.2/1.3)
-* Security headers: HSTS, X-Frame-Options, X-Content-Type-Options, CSP, Referrer-Policy, Permissions-Policy
-* Ẩn phiên bản Nginx (`server_tokens off`), đóng cổng truy cập trực tiếp của app WordPress.
 
----
+### Showcase sản phẩm và giá minh họa
 
-## Giám sát (Prometheus + Grafana)
+Mỗi sản phẩm có tên đầy đủ, câu chuyện thiết kế, mô tả quảng bá, chất liệu, kích thước tham khảo, gợi ý phối đồ, giá VNĐ, ô số lượng và hai nút **Thêm vào giỏ hàng** / **Mua ngay**. Nút Mua ngay chọn sản phẩm rồi đưa khách tới checkout; khách vẫn cần nhập thông tin và xác nhận trước khi hệ thống ghi đơn.
 
-* Prometheus thu số liệu từ: cAdvisor (container), nginx-prometheus-exporter (web server), mysqld-exporter (database).
-* Grafana: `http://192.168.119.128:3000` (tài khoản: `admin`, mật khẩu là `GRAFANA_ADMIN_PASSWORD` trong `.env`).
-* Prometheus: `http://192.168.119.128:9090`
-* Phần giám sát nằm trong file `docker-compose.monitoring.yml`, được ghép từ dòng biến `COMPOSE_FILE` trong `.env`.
-* Mạng: Prometheus, Grafana, cAdvisor ở mạng `default`; hai exporter nối thêm vào `backend-network` để đo đạc dữ liệu từ Nginx, WordPress và MySQL, nên Prometheus/Grafana không truy cập trực tiếp độc lập ngoài mạng nội bộ.
-* Giới hạn bộ nhớ từng container, lưu dữ liệu Prometheus tối đa 3 ngày.
+| Sản phẩm | Giá minh họa |
+|---|---:|
+| Túi xách Chanel 2.55 — Biểu tượng di sản thủ công vượt thời gian từ năm 1955 | 185.000.000 ₫ |
+| Túi xách Chanel Classic Flap — Kiệt tác nắp gập kinh điển với khóa xoay CC huyền thoại | 215.000.000 ₫ |
+| Túi xách Boy Chanel — Tuyên ngôn cá tính mạnh mẽ và hiện đại | 198.000.000 ₫ |
+| Túi xách Chanel 19 — Sự giao thoa mềm mại giữa di sản và tinh thần đương đại | 228.000.000 ₫ |
+| Túi Chanel Wallet on Chain — Vẻ thanh lịch nhỏ gọn cho những cuộc hẹn thành thị | 128.000.000 ₫ |
+| Túi xách Chanel Gabrielle — Tinh thần tự do trong phom dáng linh hoạt | 205.000.000 ₫ |
 
----
+**Các mức giá chỉ là dữ liệu mẫu cho đồ án, không phải giá chính thức của CHANEL hoặc lời chào bán hàng thật.** Chất liệu và kích thước cũng là thông tin tham khảo theo phiên bản; trang yêu cầu xác nhận lại trước khi đặt. Website không đại diện, không liên kết với CHANEL.
 
-## Log tập trung (Loki + Promtail)
+Mỗi mẫu có phần riêng về di sản/cảm hứng, nghệ thuật chế tác, chất liệu, kích thước, chi tiết phần cứng và gợi ý phối đồ. Số đo là tham khảo vì mỗi dòng có nhiều phiên bản. Nội dung chế tác không khẳng định số giờ khâu tay khi không có thông tin xác thực áp dụng cho đúng mẫu.
 
-* Promtail đọc log các container (qua `docker.sock`), đẩy sang Loki; Grafana xem log qua data source Loki.
-* Phần log nằm trong file `docker-compose.logging.yml`, được ghép nhỏ bởi biến `COMPOSE_FILE` trong `.env`.
-* Loki không mở cổng ra ngoài; log giữ 72 giờ.
-* Truy vấn LogQL mẫu (Grafana > Explore > chọn Loki):
-  * `{container="wp_app"}`: log truy cập ứng dụng WordPress.
-  * `{container="wp_app"} |= "45|[0-9][0-9]"`: các request lỗi 4xx/5xx.
-  * `sum by (container) (rate({container=~"wp-.*"}[1m]))`: tốc độ sinh log theo dịch vụ.
+### Giỏ hàng, checkout và dữ liệu đơn hàng
 
----
+Đây là luồng checkout minh họa không dùng WooCommerce và không xử lý thanh toán: khách thêm/xóa/cập nhật số lượng trong giỏ, nhập họ tên, email, số điện thoại, địa chỉ và ghi chú, rồi gửi yêu cầu. Hệ thống tạo đơn ở trạng thái `pending_confirmation`; không thu thập thông tin thẻ, không thu tiền và không tự gửi hàng. `Mua ngay` đưa sản phẩm đã chọn vào giỏ và cuộn tới biểu mẫu checkout.
 
-## Hardening
+MU-plugin tạo các bảng theo tiền tố WordPress (thường là `wp_`):
 
-* **Container non-root:** WordPress chạy UID 1000, bỏ toàn bộ capability (`cap_drop: ALL`), hệ thống file chỉ đọc (`read_only`), cấm leo thang đặc quyền (`no-new-privileges`)[cite: 13].
-* **Cách ly mạng:** `frontend` (nginx, wordpress, phpmyadmin) và `backend` (wordpress, mysql, phpmyadmin) là mạng `internal`; MySQL không có đường ra Internet, Nginx không nói chuyện trực tiếp tới MySQL[cite: 13].
-* **Mật khẩu mạnh:** Sinh ngẫu nhiên bằng `openssl rand`, tối thiểu 20 ký tự, lưu trong `.env` (không đưa lên GitHub), đổi mật khẩu ứng dụng bằng `security/rotate-app-password.sh`[cite: 13].
-* **Hạn chế quyền database:** User ứng dụng chỉ `SELECT, INSERT, UPDATE, DELETE` trên database của ứng dụng, khoá root đang nhập từ xa (`security/harden-db.sh`); user exporter chỉ đọc thống kê[cite: 13].
-* **Security headers Nginx:** HSTS, X-Frame-Options, X-Content-Type-Options, CSP, Referrer-Policy, Permissions-Policy; ẩn phiên bản Nginx và header `X-Powered-By`[cite: 13].
-* **Kiểm tra:** `bash security/audit.sh`[cite: 13]
-* Phần hardening nằm trong file `docker-compose.hardening.yml`, ghép nhỏ theo biến `COMPOSE_FILE`[cite: 13].
+| Bảng | Nội dung |
+|---|---|
+| `wp_chanel_products` | Catalog, giá minh họa, câu chuyện di sản, chế tác, chất liệu, kích thước, phần cứng và gợi ý phối đồ |
+| `wp_chanel_orders` | Mã đơn, thông tin liên hệ/giao hàng, trạng thái, tiền tệ, tổng tiền, thời gian |
+| `wp_chanel_order_items` | `order_id`, `product_id`, mã/tên snapshot, số lượng, đơn giá và thành tiền tại thời điểm đặt |
+| `wp_chanel_leads` | Yêu cầu tư vấn từ form showcase |
+
+Đơn hàng và các dòng sản phẩm được ghi trong một transaction MySQL: nếu không lưu đủ các mặt hàng hoặc không commit được, đơn bị rollback và website trả lỗi thay vì báo thành công. Dữ liệu cá nhân chỉ được lưu theo sự đồng ý trong biểu mẫu. Có thể xem database và đối chiếu `chanel_orders` với `chanel_order_items` trong phpMyAdmin tại cổng 8081. Hãy dùng `SHOW TABLES LIKE '%chanel_%';` để tìm tên bảng nếu WordPress dùng tiền tố khác `wp_`.
+
+Plugin `wordpress/mu-plugins/chanel-showcase.php` tự chạy mà không cần bật trong trang quản trị. Khi nâng cấp schema, plugin bổ sung trường nội dung editorial, đồng bộ mô tả của sản phẩm hiện có và thêm các mẫu mới theo slug; giá các sản phẩm hiện hữu được giữ nguyên. Form kiểm tra nonce, lọc/kiểm tra dữ liệu, yêu cầu đồng ý liên hệ và ghi bằng `$wpdb->insert` vào bảng `<tiền_tố_WordPress>chanel_leads` (thường là `wp_chanel_leads`). Trường được lưu: họ tên, email, số điện thoại tùy chọn, mẫu quan tâm, xác nhận đồng ý và thời gian gửi. Danh sách mẫu quan tâm lấy trực tiếp từ catalog đang hiển thị. Lỗi lưu DB trả HTTP 500 thay vì hiển thị thông báo thành công.
+
+Gửi form tạo request POST qua Nginx tới WordPress; request sẽ xuất hiện trong access log Nginx và được Promtail chuyển tới Loki. Có thể xác nhận dữ liệu trong phpMyAdmin bằng cách chọn database `MYSQL_DATABASE` rồi mở bảng `wp_chanel_leads` (tiền tố có thể khác).
+
+## Kiểm tra hạ tầng
+
+### Reverse proxy
+
+`nginx/nginx.conf` là cấu hình duy nhất được mount vào Nginx. Nginx chuyển tiếp website tới dịch vụ WordPress; WordPress không mở cổng host riêng. phpMyAdmin được publish riêng trên cổng 8081. Cổng 8080 chỉ phục vụ `stub_status` nội bộ cho nginx-prometheus-exporter. Có các security headers `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy` và `Permissions-Policy`, đồng thời ẩn phiên bản Nginx.
+
+Hiện tại Nginx phục vụ HTTP trên cổng 80, **chưa bật HTTPS**. HSTS không được gửi khi chưa cấu hình TLS. Headers cơ bản đáp ứng phương án reverse proxy của bài; nếu yêu cầu HTTPS, cần cấu hình chứng chỉ và publish cổng 443 trước khi bật HSTS.
+
+### Metrics
+
+Prometheus đọc `prometheus/prometheus.yml`, scrape mỗi 15 giây và lưu dữ liệu tối đa 7 ngày. Các job được cấu hình:
+
+| Job | Nguồn |
+|---|---|
+| `prometheus` | Prometheus |
+| `node-exporter` | Tài nguyên máy host |
+| `cadvisor` | Tài nguyên từng container |
+| `nginx` | Nginx qua `stub_status` và nginx-prometheus-exporter |
+| `mysql` | MySQL qua mysqld-exporter |
+
+Grafana tự provision datasource `prometheus` và `loki` cùng dashboard **Chanel Showcase — System** từ `grafana-datasources/` và `grafana-dashboards/`. Dashboard hiển thị CPU/bộ nhớ container, request và kết nối Nginx, trạng thái/kết nối/truy vấn MySQL và log gần đây. Mở Prometheus `/targets` để xác nhận các target là `UP`; trong Grafana Explore có thể chọn datasource `prometheus` hoặc `loki`.
+
+Tài khoản mysqld-exporter riêng chỉ được cấp `PROCESS`, `REPLICATION CLIENT`, `SELECT` toàn cục; không dùng tài khoản ứng dụng WordPress. Với volume DB mới, user được tạo từ `db/setup-exporter-user.sh`. Script init của MySQL chỉ tự chạy khi volume `db_data` được khởi tạo lần đầu. Nếu đang dùng volume cũ chưa có user này, chạy một lần:
+
+```bash
+docker compose exec db /bin/sh /docker-entrypoint-initdb.d/01-create-exporter-user.sh
+```
+
+Sau đó kiểm tra job `mysql` ở Prometheus `/targets`.
+
+### Logs
+
+Promtail dùng Docker service discovery qua socket, ánh xạ container ID tới Docker JSON log files, lưu positions qua volume và gắn nhãn `container` cùng `service`; log được gửi tới Loki. Loki lưu log bằng filesystem trong volume `loki_data`, với retention 72 giờ. Loki không publish cổng ra host.
+
+Ví dụ LogQL trong Grafana Explore:
+
+```logql
+{service="nginx"}
+{service="wordpress"}
+{service="nginx"} |~ " [45][0-9]{2} "
+```
+
+Gửi thử form rồi tìm request POST trong stream `{service="nginx"}`; đây là cách kiểm tra luồng HTTP request → access log → Promtail → Loki.
+
