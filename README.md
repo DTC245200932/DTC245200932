@@ -17,10 +17,10 @@ docker compose ps
 | Thành phần | Địa chỉ | Ghi chú |
 |---|---|---|
 | WordPress / Nginx | `http://192.168.119.128/` | Website chỉ được công bố qua reverse proxy; máy hiện tại dùng `192.168.119.128` |
-| phpMyAdmin | `http://localhost:8081/` | Đăng nhập bằng tài khoản MySQL trong `.env` |
-| Prometheus | `http://localhost:9090/` | Xem trạng thái scrape ở `/targets` |
-| Grafana | `http://localhost:3000/` | Tên đăng nhập `admin`, mật khẩu `GRAFANA_ADMIN_PASSWORD` |
-| Dashboard | `http://localhost:3000/d/chanel-showcase-system/chanel-showcase-system` | Dashboard dựng sẵn về web, container, DB và log |
+| phpMyAdmin | `http://192.168.119.128:8081/` | Đăng nhập bằng tài khoản MySQL trong `.env` |
+| Prometheus | `http://192.168.119.128:9090/` | Xem trạng thái scrape ở `/targets` |
+| Grafana | `http://192.168.119.128:3000/` | Tên đăng nhập `admin`, mật khẩu `GRAFANA_ADMIN_PASSWORD` |
+| Dashboard | `http://192.168.119.128:3000/d/chanel-showcase-system/chanel-showcase-system` | Dashboard dựng sẵn về web, container, DB và log |
 
 
 ### Showcase sản phẩm và giá minh họa
