@@ -147,7 +147,7 @@ services:
     volumes:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
-      - /:/rootfs:ro,rslave
+      - /:/rootfs:ro
     networks:
       - monitoring
 
